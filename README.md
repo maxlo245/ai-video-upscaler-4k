@@ -1,51 +1,68 @@
 # Upscale Studio 4K
 
-Application Windows de bureau pour agrandir une vidéo avec une IA locale, jusqu'au 4K UHD.
-Le projet reprend l'idée d'une interface graphique légère autour d'un moteur dédié de votre
-application AI Separator Studio, sans reprendre son code. Les vidéos ne sont pas téléversées :
-les traitements et les modèles tournent sur votre PC.
+Application Windows pour agrandir localement des vidéos avec Real-ESRGAN, jusqu'à la résolution
+UHD 4K. Les modèles d'IA sont intégrés à l'application : aucune inscription ni service cloud n'est
+nécessaire pour traiter une vidéo.
+
+> Les fichiers vidéo restent sur votre PC. Le premier démarrage peut télécharger FFmpeg si aucun
+> exemplaire compatible n'est déjà installé.
+
+## Télécharger
+
+Téléchargez la dernière version de **`UpscaleStudio4K.exe`** depuis la
+[page des versions](https://github.com/maxlo245/ai-video-upscaler-4k/releases/latest).
+L'exécutable Windows autonome inclut les modèles IA et ne nécessite pas l'installation de .NET.
 
 ## Fonctionnalités
 
-- Interface Windows en français, avec sélection de fichier, glisser-déposer et annulation.
-- Upscaling vidéo **2×** ou **4×**, limité à **3840 × 2160** en paysage et **2160 × 3840** en portrait.
-- Modèles Real-ESRGAN x4plus (23 blocs) pour le réalisme et x4plus Anime 6B, fournis dans
-  le dépôt et l'exécutable. Ils sont exécutés localement par ONNX Runtime avec DirectML.
-- Extraction des images, inférence IA, puis reconstruction MP4 avec audio AAC.
-- Affichage de la progression et du temps écoulé, avec estimation du temps restant pendant
-  l'upscaling des images puis l'encodage vidéo.
-- Installation vérifiée des modèles intégrés et téléchargement de FFmpeg LGPL si nécessaire.
-- Exécutable Windows autonome publié dans les Releases GitHub.
+- Interface Windows en français, sélection de fichiers, glisser-déposer et annulation.
+- Agrandissement IA **2×** ou **4×**, avec une sortie plafonnée à **3840 × 2160** en paysage et
+  **2160 × 3840** en portrait.
+- Profil **Réaliste** avec Real-ESRGAN x4plus et profil **Animation** avec Real-ESRGAN x4plus
+  Anime 6B.
+- Inférence locale via ONNX Runtime : DirectML accélère le traitement sur les GPU compatibles
+  NVIDIA, AMD et Intel; le processeur sert de solution de repli.
+- Barre de progression, temps écoulé et estimation actualisée du temps restant pour l'upscaling
+  des images et l'encodage vidéo.
+- Reconstruction en MP4 H.264/AAC, avec conservation d'une piste audio lorsque la vidéo en contient.
+- Traitement par tuiles chevauchantes pour limiter l'utilisation mémoire sur les grandes images.
 
-## Configuration
+## Utilisation
 
-- Windows 10 ou 11 en 64 bits.
-- Connexion Internet au premier usage uniquement si aucun FFmpeg n'est disponible dans le `PATH`;
-  les modèles IA sont inclus dans l'exécutable.
-- Windows 10 ou 11 avec un GPU compatible DirectX 12 recommandé. L'application accélère l'inférence
-  avec DirectML sur les GPU compatibles NVIDIA, AMD ou Intel; les performances dépendent aussi de
-  la résolution, du codec et de la durée de la vidéo.
-- Espace disque temporaire : les images extraites et agrandies peuvent demander plusieurs fois
-  la taille de la vidéo d'origine. Les fichiers temporaires sont supprimés après chaque traitement.
+1. Téléchargez et ouvrez `UpscaleStudio4K.exe`.
+2. Sélectionnez une vidéo et l'emplacement de sortie.
+3. Choisissez le facteur **2×** ou **4×** ainsi que le profil **Réaliste** ou **Animation**.
+4. Cliquez sur **LANCER L'UPSCALE**. Suivez l'avancement, le temps écoulé et le temps restant
+   estimé dans l'application; vous pouvez annuler le traitement.
 
-## Télécharger et utiliser
+Les modèles intégrés sont copiés dans `%LOCALAPPDATA%\UpscaleStudio4K\tools\models` et vérifiés
+par SHA-256. Si FFmpeg et ffprobe ne sont pas trouvés dans le `PATH`, l'application les installe
+dans son dossier local d'outils.
 
-1. Téléchargez `UpscaleStudio4K.exe` depuis les
-   [Releases privées](https://github.com/maxlo245/ai-video-upscaler-4k/releases) (un accès au
-   dépôt GitHub est nécessaire).
-2. Lancez l'exécutable et choisissez une vidéo MP4, MKV, MOV, WebM, AVI, M4V ou WMV.
-3. Choisissez 2× ou 4×, puis le profil réaliste ou animation.
-4. Cliquez sur **LANCER L'UPSCALE**. Au premier lancement, les modèles intégrés sont vérifiés;
-   si aucun FFmpeg n'est disponible, l'application le télécharge. Les images sont traitées
-   localement, par DirectML si un GPU compatible est présent, sinon par le processeur.
+## Configuration requise
 
-Les modèles intégrés à l'exécutable sont copiés dans `%LOCALAPPDATA%\UpscaleStudio4K\tools\models`
-et leur empreinte SHA-256 est contrôlée. FFmpeg, s'il n'est pas déjà installé, peut télécharger un
-paquet d'environ 80 Mo.
+- Windows 10 ou Windows 11 en 64 bits.
+- Un GPU compatible DirectX 12 est recommandé. Sans accélération GPU, le traitement fonctionne
+  sur le processeur, mais peut être nettement plus lent.
+- Une connexion Internet est nécessaire au premier démarrage uniquement si FFmpeg doit être
+  téléchargé.
+- De l'espace disque temporaire suffisant : les images sources et agrandies sont préparées avant
+  l'assemblage de la vidéo et peuvent occuper plusieurs fois la taille du fichier d'origine.
 
-## Construire l'exécutable
+## Qualité et performances
 
-Installez le SDK .NET 10, puis lancez PowerShell à la racine du dépôt :
+Les modèles et leur précision ne sont pas réduits pour accélérer le traitement. L'application
+utilise des tuiles plus larges avec chevauchement pour limiter le nombre d'inférences et évite un
+redimensionnement inutile lorsque la sortie est déjà à la taille produite par le modèle. Le gain
+effectif dépend du GPU, de la résolution et du contenu de la vidéo.
+
+Le temps restant est une estimation : il est recalculé selon la vitesse observée pendant
+l'upscaling, puis selon l'avancement de l'encodage. L'extraction des images et l'installation de
+FFmpeg ne sont pas incluses dans cette estimation.
+
+## Construire depuis les sources
+
+Installez le SDK .NET 10 et ouvrez PowerShell à la racine du dépôt :
 
 ```powershell
 dotnet run --project .\VideoUpscaler.Core.Tests\VideoUpscaler.Core.Tests.csproj
@@ -59,27 +76,26 @@ dotnet publish .\VideoUpscaler.App\VideoUpscaler.App.csproj `
   /p:IncludeNativeLibrariesForSelfExtract=true
 ```
 
-Le fichier final se trouve dans `artifacts\UpscaleStudio4K.exe`. La CI publie également un
-exécutable Windows dans chaque release créée à partir d'une étiquette `v*`.
+L'exécutable est créé dans `artifacts\UpscaleStudio4K.exe`. Les poids des deux modèles sont
+inclus directement dans le dépôt et incorporés à l'application; Git LFS n'est pas nécessaire.
 
-## Limites de cette première version
+## Limites connues
 
-- L'IA traite chaque image indépendamment. Certains détails peuvent donc scintiller entre les
-  images; le rendu dépend beaucoup de la vidéo d'origine.
-- Le format de sortie est MP4 H.264/AAC 8 bits. Les sous-titres, plusieurs pistes audio, les
-  métadonnées HDR et une partie des métadonnées de chapitre ne sont pas conservés.
-- La sortie est à fréquence d'images constante, dérivée de la fréquence moyenne détectée. Les
-  vidéos à fréquence d'images variable peuvent présenter un léger décalage audio/vidéo.
-- Le traitement de vidéos longues peut être lent et exige beaucoup d'espace temporaire. Cette
-  version prépare les images de tout le clip avant de lancer l'inférence.
-- Le temps restant est estimé à partir de la vitesse observée pour les images, puis recalculé d'après
-  l'avancement de l'encodage final; ces estimations évoluent pendant le traitement.
-- Les poids Real-ESRGAN sont inclus directement dans le dépôt et intégrés à l'exécutable. Consultez
-  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) et les licences des auteurs.
+- Chaque image est traitée indépendamment : un léger scintillement peut apparaître entre les images.
+- La sortie est un MP4 H.264/AAC 8 bits. Les sous-titres, pistes audio supplémentaires, métadonnées
+  HDR et certaines métadonnées de chapitres ne sont pas conservés.
+- Les vidéos à fréquence d'images variable sont converties à une fréquence constante basée sur la
+  fréquence moyenne détectée; un léger décalage audio/vidéo est possible.
+- Les vidéos longues nécessitent du temps de calcul et de l'espace disque temporaire.
 
-## Référence
+## Modèles et licences
 
-L'interface suit le principe de votre application
-[AI Separator Studio](https://github.com/maxlo245/ai-separator-studio_public_stable) :
-une application Windows autonome qui guide l'utilisateur et lance un moteur IA local. Le projet
-est une implémentation distincte consacrée à l'upscaling vidéo.
+Les modèles Real-ESRGAN x4plus et x4plus Anime 6B sont distribués avec leurs informations de
+provenance, empreintes et licences. Consultez
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) et [Models/RealESRGAN](Models/RealESRGAN).
+
+## Projet de référence
+
+L'interface reprend le principe d'une application de bureau légère autour d'un moteur IA local,
+comme [AI Separator Studio](https://github.com/maxlo245/ai-separator-studio_public_stable).
+Upscale Studio 4K est un projet distinct consacré à l'agrandissement vidéo.
