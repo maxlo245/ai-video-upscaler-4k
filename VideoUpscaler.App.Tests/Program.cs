@@ -8,6 +8,15 @@ Directory.CreateDirectory(workDirectory);
 
 try
 {
+    for (var coordinate = 0; coordinate < 288; coordinate++)
+    {
+        var outgoingWeight = OnnxUpscaler.CalculateAxisBlendWeight(240 + coordinate, 528, 0, 288);
+        var incomingWeight = OnnxUpscaler.CalculateAxisBlendWeight(coordinate, 528, 288, 0);
+        if (MathF.Abs(outgoingWeight + incomingWeight - 1f) > 0.02f)
+            throw new InvalidDataException("Tile blending has a visible discontinuity across the overlap.");
+    }
+    Console.WriteLine("PASS: neighboring inference tiles blend smoothly across their full overlap");
+
     var inputPath = Path.Combine(workDirectory, "input.png");
     using (var input = new Bitmap(400, 24, PixelFormat.Format24bppRgb))
     {

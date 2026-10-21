@@ -122,7 +122,7 @@ internal sealed class VideoProcessor(ExternalTools tools)
                     "-framerate", fps, "-i", Path.Combine(upscaledDirectory, "frame_%08d.png"),
                     "-i", inputPath, "-map", "0:v:0", "-map", "1:a?",
                     "-r", fps, "-fps_mode", "cfr",
-                    "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "16",
                     "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
                     "-map_metadata", "1", "-movflags", "+faststart",
                     "-shortest", outputPath

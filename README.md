@@ -25,7 +25,9 @@ L'exécutable Windows autonome inclut les modèles IA et ne nécessite pas l'ins
 - Barre de progression, temps écoulé et estimation actualisée du temps restant pour l'upscaling
   des images et l'encodage vidéo.
 - Reconstruction en MP4 H.264/AAC, avec conservation d'une piste audio lorsque la vidéo en contient.
-- Traitement par tuiles chevauchantes pour limiter l'utilisation mémoire sur les grandes images.
+- Fusion progressive des zones de chevauchement entre tuiles afin d'éviter les lignes de raccord,
+  sans réduire la précision des modèles.
+- Encodage H.264 en qualité élevée (CRF 16) avec un préréglage rapide.
 
 ## Utilisation
 
@@ -55,6 +57,11 @@ Les modèles et leur précision ne sont pas réduits pour accélérer le traitem
 utilise des tuiles plus larges avec chevauchement pour limiter le nombre d'inférences et évite un
 redimensionnement inutile lorsque la sortie est déjà à la taille produite par le modèle. Le gain
 effectif dépend du GPU, de la résolution et du contenu de la vidéo.
+
+Le traitement réduit les artefacts de raccord entre tuiles et la compression, mais aucun modèle
+d'upscaling ne peut garantir zéro artefact : les détails inventés par l'IA, les défauts de la source
+et le scintillement temporel peuvent subsister. Une stabilisation temporelle agressive peut créer
+des traînées (ghosting); elle n'est donc pas appliquée automatiquement.
 
 Le temps restant est une estimation : il est recalculé selon la vitesse observée pendant
 l'upscaling, puis selon l'avancement de l'encodage. L'extraction des images et l'installation de

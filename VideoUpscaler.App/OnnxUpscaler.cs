@@ -35,6 +35,7 @@ internal sealed class OnnxUpscaler : IDisposable
         var sourceHeight = sourceBitmap.Height;
         var sourcePixels = ReadBgrPixels(sourceBitmap);
         var outputPixels = new byte[checked(outputWidth * outputHeight * 3)];
+        var accumulatedWeights = new float[checked(outputWidth * outputHeight)];
 
         for (var coreY = 0; coreY < sourceHeight; coreY += TileSize)
         {
@@ -67,18 +68,53 @@ internal sealed class OnnxUpscaler : IDisposable
                         : ResizeBitmap(upscaledBitmap, resizedWidth, resizedHeight);
                 var tilePixels = ReadBgrPixels(resizedTile ?? upscaledBitmap);
 
-                var targetX = ScaleCoordinate(coreX, outputWidth, sourceWidth);
-                var targetY = ScaleCoordinate(coreY, outputHeight, sourceHeight);
-                var copyWidth = ScaleCoordinate(coreX + coreWidth, outputWidth, sourceWidth) - targetX;
-                var copyHeight = ScaleCoordinate(coreY + coreHeight, outputHeight, sourceHeight) - targetY;
-                var sourceX = targetX - scaledTileX;
-                var sourceY = targetY - scaledTileY;
+                var fadeInWidth = coreX > 0
+                    ? ScaleCoordinate(coreX + TileOverlap, outputWidth, sourceWidth) - scaledTileX
+                    : 0;
+                var fadeInHeight = coreY > 0
+                    ? ScaleCoordinate(coreY + TileOverlap, outputHeight, sourceHeight) - scaledTileY
+                    : 0;
+                var fadeOutWidth = coreX + coreWidth < sourceWidth
+                    ? scaledTileRight - ScaleCoordinate(coreX + coreWidth - TileOverlap, outputWidth, sourceWidth)
+                    : 0;
+                var fadeOutHeight = coreY + coreHeight < sourceHeight
+                    ? scaledTileBottom - ScaleCoordinate(coreY + coreHeight - TileOverlap, outputHeight, sourceHeight)
+                    : 0;
+                var horizontalWeights = new float[resizedWidth];
+                for (var x = 0; x < resizedWidth; x++)
+                    horizontalWeights[x] = CalculateAxisBlendWeight(x, resizedWidth, fadeInWidth, fadeOutWidth);
+                var verticalWeights = new float[resizedHeight];
+                for (var y = 0; y < resizedHeight; y++)
+                    verticalWeights[y] = CalculateAxisBlendWeight(y, resizedHeight, fadeInHeight, fadeOutHeight);
 
-                for (var row = 0; row < copyHeight; row++)
+                for (var y = 0; y < resizedHeight; y++)
                 {
-                    var sourceOffset = ((sourceY + row) * resizedWidth + sourceX) * 3;
-                    var targetOffset = ((targetY + row) * outputWidth + targetX) * 3;
-                    Buffer.BlockCopy(tilePixels, sourceOffset, outputPixels, targetOffset, copyWidth * 3);
+                    var weightY = verticalWeights[y];
+                    var targetRow = (scaledTileY + y) * outputWidth + scaledTileX;
+                    var sourceRow = y * resizedWidth;
+                    for (var x = 0; x < resizedWidth; x++)
+                    {
+                        var blendWeight = weightY * horizontalWeights[x];
+                        if (blendWeight <= 0)
+                            continue;
+
+                        var targetPixel = targetRow + x;
+                        var previousWeight = accumulatedWeights[targetPixel];
+                        var totalWeight = previousWeight + blendWeight;
+                        var targetOffset = targetPixel * 3;
+                        var sourceOffset = (sourceRow + x) * 3;
+                        for (var channel = 0; channel < 3; channel++)
+                        {
+                            outputPixels[targetOffset + channel] = (byte)Math.Clamp(
+                                (int)MathF.Round(
+                                    (outputPixels[targetOffset + channel] * previousWeight +
+                                     tilePixels[sourceOffset + channel] * blendWeight) / totalWeight),
+                                0,
+                                255);
+                        }
+
+                        accumulatedWeights[targetPixel] = totalWeight;
+                    }
                 }
             }
         }
@@ -254,6 +290,23 @@ internal sealed class OnnxUpscaler : IDisposable
 
     private static int ScaleCoordinate(int coordinate, int outputLength, int inputLength) =>
         (int)Math.Round((double)coordinate * outputLength / inputLength, MidpointRounding.AwayFromZero);
+
+    internal static float CalculateAxisBlendWeight(
+        int coordinate, int length, int fadeInLength, int fadeOutLength)
+    {
+        var weight = 1f;
+        if (fadeInLength > 0)
+            weight *= SmoothStep((float)coordinate / fadeInLength);
+        if (fadeOutLength > 0)
+            weight *= SmoothStep((float)(length - 1 - coordinate) / fadeOutLength);
+        return weight;
+    }
+
+    private static float SmoothStep(float value)
+    {
+        var clamped = Math.Clamp(value, 0f, 1f);
+        return clamped * clamped * (3f - 2f * clamped);
+    }
 
     private static byte ToByte(float value) =>
         (byte)Math.Clamp((int)MathF.Round(value * 255f), 0, 255);
