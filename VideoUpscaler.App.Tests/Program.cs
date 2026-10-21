@@ -1,0 +1,98 @@
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Reflection;
+using VideoUpscaler.App;
+
+var workDirectory = Path.Combine(Path.GetTempPath(), $"UpscaleStudio4K-test-{Guid.NewGuid():N}");
+Directory.CreateDirectory(workDirectory);
+
+try
+{
+    var inputPath = Path.Combine(workDirectory, "input.png");
+    using (var input = new Bitmap(264, 24, PixelFormat.Format24bppRgb))
+    {
+        for (var y = 0; y < input.Height; y++)
+        for (var x = 0; x < input.Width; x++)
+            input.SetPixel(x, y, Color.FromArgb(x % 256, y * 10, (x + y) % 256));
+
+        input.Save(inputPath, ImageFormat.Png);
+    }
+
+    var appAssembly = typeof(VideoProcessor).Assembly;
+    foreach (var model in new[]
+             {
+                 (Resource: "UpscaleStudio4K.Models.General.onnx", Name: "Real-ESRGAN x4plus"),
+                 (Resource: "UpscaleStudio4K.Models.Anime.onnx", Name: "Real-ESRGAN x4plus Anime 6B")
+             })
+    {
+        var modelPath = Path.Combine(workDirectory, $"{model.Name}.onnx");
+        using (var resource = appAssembly.GetManifestResourceStream(model.Resource)
+                              ?? throw new InvalidDataException($"Embedded model missing: {model.Resource}"))
+        await using (var destination = File.Create(modelPath))
+        {
+            await resource.CopyToAsync(destination);
+        }
+
+        var outputPath = Path.Combine(workDirectory, $"{model.Name}.png");
+        using (var upscaler = new OnnxUpscaler(modelPath, Console.WriteLine))
+            upscaler.ProcessFrame(inputPath, outputPath, 528, 48, CancellationToken.None);
+
+        using var output = new Bitmap(outputPath);
+        if (output.Width != 528 || output.Height != 48)
+            throw new InvalidDataException($"{model.Name} returned unexpected output dimensions.");
+        if (output.GetPixel(64, 24).ToArgb() == output.GetPixel(480, 24).ToArgb())
+            throw new InvalidDataException($"{model.Name} returned a constant output image.");
+
+        Console.WriteLine($"PASS: {model.Name} tiled inference at {output.Width}×{output.Height}");
+    }
+
+    var tools = new ExternalTools();
+    if (tools.CurrentFfmpegPath is not null && tools.CurrentFfprobePath is not null)
+    {
+        await tools.EnsureInstalledAsync(Console.WriteLine, CancellationToken.None);
+        var videoPath = Path.Combine(workDirectory, "input.mp4");
+        var outputVideoPath = Path.Combine(workDirectory, "upscaled.mp4");
+        await ProcessRunner.RunAsync(
+            tools.CurrentFfmpegPath,
+            [
+                "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "testsrc=size=64x48:rate=2",
+                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
+                "-t", "1", "-pix_fmt", "yuv420p", "-c:a", "aac", "-y", videoPath
+            ],
+            workDirectory,
+            null,
+            CancellationToken.None);
+        await new VideoProcessor(tools).RunAsync(
+            videoPath, outputVideoPath, 2, false, Console.WriteLine, CancellationToken.None);
+
+        var outputInfo = await ProcessRunner.RunAsync(
+            tools.CurrentFfprobePath,
+            [
+                "-v", "error", "-show_entries", "stream=codec_type,width,height",
+                "-of", "json", outputVideoPath
+            ],
+            workDirectory,
+            null,
+            CancellationToken.None);
+        using var videoDocument = System.Text.Json.JsonDocument.Parse(outputInfo);
+        var streams = videoDocument.RootElement.GetProperty("streams");
+        if (!streams.EnumerateArray().Any(stream =>
+                stream.GetProperty("codec_type").GetString() == "video" &&
+                stream.GetProperty("width").GetInt32() == 128 &&
+                stream.GetProperty("height").GetInt32() == 96))
+            throw new InvalidDataException("The video processor returned unexpected dimensions.");
+        if (!streams.EnumerateArray().Any(stream => stream.GetProperty("codec_type").GetString() == "audio"))
+            throw new InvalidDataException("The video processor did not preserve its audio track.");
+
+        Console.WriteLine("PASS: end-to-end video inference, output dimensions, and audio preservation");
+    }
+    else
+    {
+        Console.WriteLine("SKIP: FFmpeg is unavailable; end-to-end video test could not run.");
+    }
+}
+finally
+{
+    Directory.Delete(workDirectory, recursive: true);
+}

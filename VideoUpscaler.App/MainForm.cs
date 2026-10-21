@@ -173,7 +173,7 @@ internal sealed class MainForm : Form
         layout.Controls.Add(scaleBox, 1, 0);
 
         layout.Controls.Add(MakeLabel("Style IA", 10, TextPrimary), 0, 1);
-        ConfigureCombo(modelBox, ["Vidéo réaliste · Real-ESRGAN General", "Animation · Real-ESRGAN Anime"]);
+        ConfigureCombo(modelBox, ["Réaliste · Real-ESRGAN x4plus", "Animation · Real-ESRGAN x4plus Anime"]);
         layout.Controls.Add(modelBox, 1, 1);
         modelBox.SelectedIndex = 0;
 

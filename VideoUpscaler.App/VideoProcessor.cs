@@ -59,17 +59,36 @@ internal sealed class VideoProcessor(ExternalTools tools)
             if (!Directory.EnumerateFiles(framesDirectory, "frame_*.png").Any())
                 throw new InvalidDataException("FFmpeg n'a extrait aucune image de cette vidéo.");
 
-            report("2/3 — Upscaling par le modèle IA Real-ESRGAN…");
-            var model = anime ? ExternalTools.AnimeModel : ExternalTools.GeneralModel;
-            await ProcessRunner.RunAsync(tools.EnginePath,
-                [
-                    "-i", framesDirectory, "-o", upscaledDirectory,
-                    "-m", tools.ModelDirectory,
-                    "-n", model, "-s", scale.ToString(CultureInfo.InvariantCulture), "-f", "png"
-                ], jobDirectory, reportToolOutput, cancellationToken);
+            report(anime
+                ? "2/3 — Upscaling vidéo par le modèle Real-ESRGAN x4plus Anime 6B…"
+                : "2/3 — Upscaling vidéo par le modèle Real-ESRGAN x4plus…");
+            var frameFiles = Directory.GetFiles(framesDirectory, "frame_*.png")
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (frameFiles.Length == 0)
+                throw new InvalidDataException("FFmpeg n'a extrait aucune image de cette vidéo.");
+
+            await Task.Run(() =>
+            {
+                using var upscaler = new OnnxUpscaler(
+                    anime ? tools.AnimeModelPath : tools.GeneralModelPath, report);
+                for (var index = 0; index < frameFiles.Length; index++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var outputFrame = Path.Combine(upscaledDirectory, Path.GetFileName(frameFiles[index]));
+                    upscaler.ProcessFrame(
+                        frameFiles[index],
+                        outputFrame,
+                        plan.OutputWidth,
+                        plan.OutputHeight,
+                        cancellationToken);
+                    if ((index + 1) % 5 == 0 || index + 1 == frameFiles.Length)
+                        report($"Inférence IA : image {index + 1}/{frameFiles.Length}");
+                }
+            }, cancellationToken);
 
             if (!Directory.EnumerateFiles(upscaledDirectory, "frame_*.png").Any())
-                throw new InvalidDataException("Le moteur IA n'a produit aucune image.");
+                throw new InvalidDataException("Le modèle IA n'a produit aucune image.");
 
             report("3/3 — Assemblage de la vidéo et de l'audio…");
             var fps = plan.FramesPerSecond.ToString("0.########", CultureInfo.InvariantCulture);
@@ -78,7 +97,6 @@ internal sealed class VideoProcessor(ExternalTools tools)
                     "-hide_banner", "-loglevel", "error", "-y",
                     "-framerate", fps, "-i", Path.Combine(upscaledDirectory, "frame_%08d.png"),
                     "-i", inputPath, "-map", "0:v:0", "-map", "1:a?",
-                    "-vf", $"scale={plan.OutputWidth}:{plan.OutputHeight}:flags=lanczos",
                     "-r", fps, "-fps_mode", "cfr",
                     "-c:v", "libx264", "-preset", "medium", "-crf", "18",
                     "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",

@@ -22,6 +22,9 @@ jobs:
       - name: Run core tests
         run: dotnet run --project .\VideoUpscaler.Core.Tests\VideoUpscaler.Core.Tests.csproj
 
+      - name: Run AI model inference tests
+        run: dotnet run --project .\VideoUpscaler.App.Tests\VideoUpscaler.App.Tests.csproj
+
       - name: Publish self-contained Windows executable
         run: >-
           dotnet publish .\VideoUpscaler.App\VideoUpscaler.App.csproj

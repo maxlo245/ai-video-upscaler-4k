@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -9,26 +11,25 @@ namespace VideoUpscaler.App;
 
 internal sealed class ExternalTools
 {
-    private const string RealEsrganApi = "https://api.github.com/repos/xinntao/Real-ESRGAN-ncnn-vulkan/releases/latest";
     private const string FfmpegApi = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest";
-    private const string ModelBaseUrl =
-        "https://raw.githubusercontent.com/upscayl/custom-models/4b6d2cfa59c7442af115dfc6e50fd8d7d40b96ef/models/";
-    public const string GeneralModel = "RealESRGAN_General_x4_v3";
-    public const string AnimeModel = "realesr-animevideov3-x4";
+    private const string GeneralModelResource = "UpscaleStudio4K.Models.General.onnx";
+    private const string AnimeModelResource = "UpscaleStudio4K.Models.Anime.onnx";
+    private const string GeneralModelHash = "4851ec156207d271f5328605d0582eeb851e656227da8aca093ced9e60789291";
+    private const string AnimeModelHash = "9a029dae374b2cd4c3eb2dbbed857e22e6d785687c767aa12828e7356b9fb378";
     private readonly string toolsDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "UpscaleStudio4K", "tools");
 
     private static readonly HttpClient Http = CreateHttpClient();
 
-    public string EnginePath => Path.Combine(toolsDirectory, "realesrgan", "realesrgan-ncnn-vulkan.exe");
-    public string ModelDirectory => Path.Combine(toolsDirectory, "realesrgan", "models");
+    public string ModelDirectory => Path.Combine(toolsDirectory, "models");
+    public string GeneralModelPath => Path.Combine(ModelDirectory, "realesrgan-x4plus.onnx");
+    public string AnimeModelPath => Path.Combine(ModelDirectory, "realesrgan-x4plus-anime-6b.onnx");
     public string FfmpegPath => Path.Combine(toolsDirectory, "ffmpeg", "bin", "ffmpeg.exe");
     public string FfprobePath => Path.Combine(toolsDirectory, "ffmpeg", "bin", "ffprobe.exe");
 
-    public bool IsReady => File.Exists(EnginePath) &&
-                           HasModel(GeneralModel) &&
-                           HasModel(AnimeModel) &&
+    public bool IsReady => File.Exists(GeneralModelPath) &&
+                           File.Exists(AnimeModelPath) &&
                            (File.Exists(FfmpegPath) || FindOnPath("ffmpeg.exe") is not null);
 
     public string? CurrentFfmpegPath => File.Exists(FfmpegPath) ? FfmpegPath : FindOnPath("ffmpeg.exe");
@@ -49,15 +50,11 @@ internal sealed class ExternalTools
     public async Task EnsureInstalledAsync(Action<string> report, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(toolsDirectory);
-
-        if (!File.Exists(EnginePath))
-        {
-            report("Téléchargement du moteur IA Real-ESRGAN depuis GitHub…");
-            await InstallRealEsrganAsync(report, cancellationToken);
-        }
-
-        await InstallModelAsync(GeneralModel, report, cancellationToken);
-        await InstallModelAsync(AnimeModel, report, cancellationToken);
+        Directory.CreateDirectory(ModelDirectory);
+        await InstallBundledModelAsync(
+            GeneralModelResource, GeneralModelPath, GeneralModelHash, "Real-ESRGAN x4plus", report, cancellationToken);
+        await InstallBundledModelAsync(
+            AnimeModelResource, AnimeModelPath, AnimeModelHash, "Real-ESRGAN x4plus Anime", report, cancellationToken);
 
         if (CurrentFfmpegPath is null || CurrentFfprobePath is null)
         {
@@ -66,68 +63,49 @@ internal sealed class ExternalTools
         }
     }
 
-    private async Task InstallRealEsrganAsync(Action<string> report, CancellationToken cancellationToken)
+    private static async Task InstallBundledModelAsync(
+        string resourceName,
+        string modelPath,
+        string expectedHash,
+        string modelLabel,
+        Action<string> report,
+        CancellationToken cancellationToken)
     {
-        var release = await GetReleaseAsync(RealEsrganApi, cancellationToken);
-        var asset = release.Assets.FirstOrDefault(item =>
-            item.Name.Contains("windows", StringComparison.OrdinalIgnoreCase) &&
-            item.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
-        if (asset is null)
-            throw new InvalidOperationException("La release Real-ESRGAN ne contient pas d'archive Windows.");
+        if (File.Exists(modelPath))
+        {
+            await using var existing = File.OpenRead(modelPath);
+            var existingHash = Convert.ToHexString(await SHA256.HashDataAsync(existing, cancellationToken));
+            if (existingHash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+                return;
+        }
 
-        var download = await DownloadAssetAsync(asset.DownloadUrl, asset.Name, report, cancellationToken);
-        var destination = Path.Combine(toolsDirectory, "realesrgan");
+        report($"Installation locale du modèle {modelLabel}…");
+        await using var resource = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)
+                                   ?? throw new InvalidDataException($"Le modèle intégré « {resourceName} » est absent.");
+        var temporaryPath = $"{modelPath}.{Guid.NewGuid():N}.tmp";
         try
         {
-            ExtractSelectedEntries(download, destination, static name =>
+            await using (var destination = new FileStream(
+                             temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                var normalized = name.Replace('\\', '/');
-                return normalized.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
-                       normalized.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
-                       normalized.EndsWith(".param", StringComparison.OrdinalIgnoreCase) ||
-                       normalized.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) ||
-                       normalized.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
-            });
+                await resource.CopyToAsync(destination, cancellationToken);
+            }
+
+            await using (var downloaded = File.OpenRead(temporaryPath))
+            {
+                var actualHash = Convert.ToHexString(await SHA256.HashDataAsync(downloaded, cancellationToken));
+                if (!actualHash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"La somme SHA-256 du modèle {modelLabel} est invalide.");
+            }
+
+            File.Move(temporaryPath, modelPath, overwrite: true);
         }
         finally
         {
-            File.Delete(download);
-        }
-
-        if (!File.Exists(EnginePath))
-        {
-            throw new InvalidDataException("L'archive Real-ESRGAN ne contient pas le moteur attendu.");
+            if (File.Exists(temporaryPath))
+                File.Delete(temporaryPath);
         }
     }
-
-    private async Task InstallModelAsync(string modelName, Action<string> report, CancellationToken cancellationToken)
-    {
-        if (HasModel(modelName))
-            return;
-
-        report($"Téléchargement du modèle IA {modelName}…");
-        var parameterFile = await DownloadAssetAsync(
-            $"{ModelBaseUrl}{modelName}.param", $"{modelName}.param", report, cancellationToken);
-        string? weightsFile = null;
-        try
-        {
-            weightsFile = await DownloadAssetAsync(
-                $"{ModelBaseUrl}{modelName}.bin", $"{modelName}.bin", report, cancellationToken);
-            Directory.CreateDirectory(ModelDirectory);
-            File.Move(parameterFile, Path.Combine(ModelDirectory, $"{modelName}.param"), overwrite: true);
-            File.Move(weightsFile, Path.Combine(ModelDirectory, $"{modelName}.bin"), overwrite: true);
-        }
-        finally
-        {
-            File.Delete(parameterFile);
-            if (weightsFile is not null)
-                File.Delete(weightsFile);
-        }
-    }
-
-    private bool HasModel(string modelName) =>
-        File.Exists(Path.Combine(ModelDirectory, $"{modelName}.param")) &&
-        File.Exists(Path.Combine(ModelDirectory, $"{modelName}.bin"));
 
     private async Task InstallFfmpegAsync(Action<string> report, CancellationToken cancellationToken)
     {
@@ -178,7 +156,7 @@ internal sealed class ExternalTools
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
             uri.Scheme != Uri.UriSchemeHttps ||
             uri.Host is not ("github.com" or "objects.githubusercontent.com" or
-                "release-assets.githubusercontent.com" or "raw.githubusercontent.com"))
+                "release-assets.githubusercontent.com"))
         {
             throw new InvalidDataException("L'URL de téléchargement GitHub n'est pas autorisée.");
         }
@@ -258,7 +236,7 @@ internal sealed class ExternalTools
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("UpscaleStudio4K", "0.1.0"));
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("UpscaleStudio4K", "0.2.0"));
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         return client;
     }
