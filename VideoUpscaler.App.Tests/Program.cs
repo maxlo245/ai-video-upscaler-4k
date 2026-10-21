@@ -9,7 +9,7 @@ Directory.CreateDirectory(workDirectory);
 try
 {
     var inputPath = Path.Combine(workDirectory, "input.png");
-    using (var input = new Bitmap(264, 24, PixelFormat.Format24bppRgb))
+    using (var input = new Bitmap(400, 24, PixelFormat.Format24bppRgb))
     {
         for (var y = 0; y < input.Height; y++)
         for (var x = 0; x < input.Width; x++)
@@ -35,10 +35,10 @@ try
 
         var outputPath = Path.Combine(workDirectory, $"{model.Name}.png");
         using (var upscaler = new OnnxUpscaler(modelPath, Console.WriteLine))
-            upscaler.ProcessFrame(inputPath, outputPath, 528, 48, CancellationToken.None);
+            upscaler.ProcessFrame(inputPath, outputPath, 800, 48, CancellationToken.None);
 
         using var output = new Bitmap(outputPath);
-        if (output.Width != 528 || output.Height != 48)
+        if (output.Width != 800 || output.Height != 48)
             throw new InvalidDataException($"{model.Name} returned unexpected output dimensions.");
         if (output.GetPixel(64, 24).ToArgb() == output.GetPixel(480, 24).ToArgb())
             throw new InvalidDataException($"{model.Name} returned a constant output image.");
@@ -63,8 +63,22 @@ try
             workDirectory,
             null,
             CancellationToken.None);
+        var progressUpdates = new List<VideoProcessor.VideoProgress>();
         await new VideoProcessor(tools).RunAsync(
-            videoPath, outputVideoPath, 2, false, Console.WriteLine, CancellationToken.None);
+            videoPath, outputVideoPath, 2, false, Console.WriteLine, CancellationToken.None,
+            progressUpdates.Add);
+        if (!progressUpdates.Any(progress =>
+                progress.Stage == "Upscaling des images" &&
+                progress.CompletedFrames > 0 &&
+                progress.TotalFrames > 0 &&
+                progress.Remaining.HasValue))
+            throw new InvalidDataException("The video processor did not report image timing estimates.");
+        if (!progressUpdates.Any(progress => progress.Stage == "Assemblage de la vidéo et de l'audio"))
+            throw new InvalidDataException("The video processor did not report the assembly stage.");
+        if (!progressUpdates.Any(progress =>
+                progress.Stage == "Assemblage de la vidéo et de l'audio" &&
+                progress.Remaining.HasValue))
+            throw new InvalidDataException("The video processor did not report an assembly time estimate.");
 
         var outputInfo = await ProcessRunner.RunAsync(
             tools.CurrentFfprobePath,

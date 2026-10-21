@@ -13,8 +13,10 @@ internal sealed class VideoProcessor(ExternalTools tools)
         int scale,
         bool anime,
         Action<string> report,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<VideoProgress>? progressChanged = null)
     {
+        var jobStopwatch = Stopwatch.StartNew();
         var ffmpeg = tools.CurrentFfmpegPath
                      ?? throw new InvalidOperationException("FFmpeg est introuvable.");
         var ffprobe = tools.CurrentFfprobePath
@@ -24,6 +26,10 @@ internal sealed class VideoProcessor(ExternalTools tools)
         var lastOutputTick = Stopwatch.GetTimestamp();
         Action<string> reportToolOutput = line =>
         {
+            if (line.StartsWith("out_time_us=", StringComparison.Ordinal) ||
+                line.StartsWith("progress=", StringComparison.Ordinal))
+                return;
+
             var now = Stopwatch.GetTimestamp();
             var important = line.Contains("error", StringComparison.OrdinalIgnoreCase) ||
                             line.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
@@ -48,6 +54,7 @@ internal sealed class VideoProcessor(ExternalTools tools)
 
         try
         {
+            progressChanged?.Invoke(new VideoProgress("Extraction des images", 0, 0, jobStopwatch.Elapsed, null));
             report("1/3 — Extraction des images…");
             await ProcessRunner.RunAsync(ffmpeg,
                 [
@@ -72,6 +79,7 @@ internal sealed class VideoProcessor(ExternalTools tools)
             {
                 using var upscaler = new OnnxUpscaler(
                     anime ? tools.AnimeModelPath : tools.GeneralModelPath, report);
+                var inferenceStopwatch = Stopwatch.StartNew();
                 for (var index = 0; index < frameFiles.Length; index++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -82,19 +90,35 @@ internal sealed class VideoProcessor(ExternalTools tools)
                         plan.OutputWidth,
                         plan.OutputHeight,
                         cancellationToken);
-                    if ((index + 1) % 5 == 0 || index + 1 == frameFiles.Length)
-                        report($"Inférence IA : image {index + 1}/{frameFiles.Length}");
+
+                    var completedFrames = index + 1;
+                    var remainingFrames = frameFiles.Length - completedFrames;
+                    var remaining = TimeSpan.FromSeconds(
+                        inferenceStopwatch.Elapsed.TotalSeconds * remainingFrames / completedFrames);
+                    progressChanged?.Invoke(new VideoProgress(
+                        "Upscaling des images", completedFrames, frameFiles.Length, jobStopwatch.Elapsed, remaining));
+                    if (completedFrames % 5 == 0 || completedFrames == frameFiles.Length)
+                    {
+                        report(
+                            $"Inférence IA : image {completedFrames}/{frameFiles.Length} | " +
+                            $"écoulé {FormatDuration(jobStopwatch.Elapsed)} | " +
+                            $"reste estimé {FormatDuration(remaining)} (images)");
+                    }
                 }
             }, cancellationToken);
 
             if (!Directory.EnumerateFiles(upscaledDirectory, "frame_*.png").Any())
                 throw new InvalidDataException("Le modèle IA n'a produit aucune image.");
 
+            progressChanged?.Invoke(new VideoProgress("Assemblage de la vidéo et de l'audio", 0, frameFiles.Length, jobStopwatch.Elapsed, null));
             report("3/3 — Assemblage de la vidéo et de l'audio…");
             var fps = plan.FramesPerSecond.ToString("0.########", CultureInfo.InvariantCulture);
+            var mediaDuration = TimeSpan.FromSeconds(frameFiles.Length / plan.FramesPerSecond);
+            var assemblyStopwatch = Stopwatch.StartNew();
             await ProcessRunner.RunAsync(ffmpeg,
                 [
-                    "-hide_banner", "-loglevel", "error", "-y",
+                    "-hide_banner", "-loglevel", "error", "-y", "-progress", "pipe:1", "-nostats",
+                    "-stats_period", "1",
                     "-framerate", fps, "-i", Path.Combine(upscaledDirectory, "frame_%08d.png"),
                     "-i", inputPath, "-map", "0:v:0", "-map", "1:a?",
                     "-r", fps, "-fps_mode", "cfr",
@@ -102,8 +126,28 @@ internal sealed class VideoProcessor(ExternalTools tools)
                     "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
                     "-map_metadata", "1", "-movflags", "+faststart",
                     "-shortest", outputPath
-                ], jobDirectory, reportToolOutput, cancellationToken);
+                ], jobDirectory, reportToolOutput, cancellationToken, mediaProgress: processedMediaTime =>
+                {
+                    var processedTicks = Math.Clamp(processedMediaTime.Ticks, 0, mediaDuration.Ticks);
+                    var processedSeconds = TimeSpan.FromTicks(processedTicks).TotalSeconds;
+                    TimeSpan? remaining = processedTicks > 0
+                        ? TimeSpan.FromSeconds(
+                            assemblyStopwatch.Elapsed.TotalSeconds *
+                            (mediaDuration.Ticks - processedTicks) / processedTicks)
+                        : null;
+                    var completedFrames = Math.Clamp(
+                        (int)Math.Round(processedSeconds * plan.FramesPerSecond),
+                        0,
+                        frameFiles.Length);
+                    progressChanged?.Invoke(new VideoProgress(
+                        "Assemblage de la vidéo et de l'audio",
+                        completedFrames,
+                        frameFiles.Length,
+                        jobStopwatch.Elapsed,
+                        remaining));
+                });
 
+            progressChanged?.Invoke(new VideoProgress("Terminé", frameFiles.Length, frameFiles.Length, jobStopwatch.Elapsed, TimeSpan.Zero));
             report($"Terminé : {outputPath}");
         }
         finally
@@ -122,6 +166,21 @@ internal sealed class VideoProcessor(ExternalTools tools)
             }
         }
     }
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        var hours = (int)duration.TotalHours;
+        return hours > 0
+            ? $"{hours:00}:{duration.Minutes:00}:{duration.Seconds:00}"
+            : $"{duration.Minutes:00}:{duration.Seconds:00}";
+    }
+
+    internal sealed record VideoProgress(
+        string Stage,
+        int CompletedFrames,
+        int TotalFrames,
+        TimeSpan Elapsed,
+        TimeSpan? Remaining);
 
     private static async Task<VideoStreamInfo> ProbeAsync(
         string ffprobe, string inputPath, CancellationToken cancellationToken)

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -256,7 +257,8 @@ internal static class ProcessRunner
         IEnumerable<string> arguments,
         string? workingDirectory,
         Action<string>? output,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<TimeSpan>? mediaProgress = null)
     {
         var startInfo = new ProcessStartInfo(executable)
         {
@@ -280,6 +282,16 @@ internal static class ProcessRunner
                 return;
             lock (stdout)
                 stdout.AppendLine(eventArgs.Data);
+            if (mediaProgress is not null &&
+                eventArgs.Data.StartsWith("out_time_us=", StringComparison.Ordinal) &&
+                long.TryParse(
+                    eventArgs.Data.AsSpan("out_time_us=".Length),
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var microseconds))
+            {
+                mediaProgress(TimeSpan.FromMilliseconds(microseconds / 1000d));
+            }
             output?.Invoke(eventArgs.Data);
         };
         process.ErrorDataReceived += (_, eventArgs) =>

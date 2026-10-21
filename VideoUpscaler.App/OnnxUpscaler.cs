@@ -10,7 +10,7 @@ namespace VideoUpscaler.App;
 internal sealed class OnnxUpscaler : IDisposable
 {
     private const int ModelScale = 4;
-    private const int TileSize = 256;
+    private const int TileSize = 384;
     private const int TileOverlap = 144;
     private readonly InferenceSession session;
     private readonly string inputName;
@@ -59,9 +59,13 @@ internal sealed class OnnxUpscaler : IDisposable
                 var scaledTileY = ScaleCoordinate(tileY, outputHeight, sourceHeight);
                 var scaledTileRight = ScaleCoordinate(tileRight, outputWidth, sourceWidth);
                 var scaledTileBottom = ScaleCoordinate(tileBottom, outputHeight, sourceHeight);
-                using var resizedTile = ResizeBitmap(
-                    upscaledBitmap, scaledTileRight - scaledTileX, scaledTileBottom - scaledTileY);
-                var tilePixels = ReadBgrPixels(resizedTile);
+                var resizedWidth = scaledTileRight - scaledTileX;
+                var resizedHeight = scaledTileBottom - scaledTileY;
+                using var resizedTile =
+                    resizedWidth == upscaledBitmap.Width && resizedHeight == upscaledBitmap.Height
+                        ? null
+                        : ResizeBitmap(upscaledBitmap, resizedWidth, resizedHeight);
+                var tilePixels = ReadBgrPixels(resizedTile ?? upscaledBitmap);
 
                 var targetX = ScaleCoordinate(coreX, outputWidth, sourceWidth);
                 var targetY = ScaleCoordinate(coreY, outputHeight, sourceHeight);
@@ -72,7 +76,7 @@ internal sealed class OnnxUpscaler : IDisposable
 
                 for (var row = 0; row < copyHeight; row++)
                 {
-                    var sourceOffset = ((sourceY + row) * resizedTile.Width + sourceX) * 3;
+                    var sourceOffset = ((sourceY + row) * resizedWidth + sourceX) * 3;
                     var targetOffset = ((targetY + row) * outputWidth + targetX) * 3;
                     Buffer.BlockCopy(tilePixels, sourceOffset, outputPixels, targetOffset, copyWidth * 3);
                 }

@@ -12,6 +12,8 @@ les traitements et les modèles tournent sur votre PC.
 - Modèles Real-ESRGAN x4plus (23 blocs) pour le réalisme et x4plus Anime 6B, fournis dans
   le dépôt et l'exécutable. Ils sont exécutés localement par ONNX Runtime avec DirectML.
 - Extraction des images, inférence IA, puis reconstruction MP4 avec audio AAC.
+- Affichage de la progression et du temps écoulé, avec estimation du temps restant pendant
+  l'upscaling des images puis l'encodage vidéo.
 - Installation vérifiée des modèles intégrés et téléchargement de FFmpeg LGPL si nécessaire.
 - Exécutable Windows autonome publié dans les Releases GitHub.
 
@@ -46,7 +48,6 @@ paquet d'environ 80 Mo.
 Installez le SDK .NET 10, puis lancez PowerShell à la racine du dépôt :
 
 ```powershell
-git lfs pull
 dotnet run --project .\VideoUpscaler.Core.Tests\VideoUpscaler.Core.Tests.csproj
 dotnet run --project .\VideoUpscaler.App.Tests\VideoUpscaler.App.Tests.csproj
 dotnet publish .\VideoUpscaler.App\VideoUpscaler.App.csproj `
@@ -71,7 +72,9 @@ exécutable Windows dans chaque release créée à partir d'une étiquette `v*`.
   vidéos à fréquence d'images variable peuvent présenter un léger décalage audio/vidéo.
 - Le traitement de vidéos longues peut être lent et exige beaucoup d'espace temporaire. Cette
   version prépare les images de tout le clip avant de lancer l'inférence.
-- Les poids Real-ESRGAN sont inclus dans le dépôt par Git LFS et intégrés à l'exécutable. Consultez
+- Le temps restant est estimé à partir de la vitesse observée pour les images, puis recalculé d'après
+  l'avancement de l'encodage final; ces estimations évoluent pendant le traitement.
+- Les poids Real-ESRGAN sont inclus directement dans le dépôt et intégrés à l'exécutable. Consultez
   [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) et les licences des auteurs.
 
 ## Référence

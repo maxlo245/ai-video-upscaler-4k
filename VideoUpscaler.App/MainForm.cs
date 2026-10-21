@@ -430,6 +430,8 @@ internal sealed class MainForm : Form
         cancellation = new CancellationTokenSource();
         IProgress<string> progress = new Progress<string>(AppendLog);
         IProgress<string> update = new Progress<string>(message => jobStatus.Text = message.ToUpperInvariant());
+        IProgress<VideoProcessor.VideoProgress> jobProgress =
+            new Progress<VideoProcessor.VideoProgress>(UpdateJobProgress);
         try
         {
             AppendLog("Vérification des moteurs requis…");
@@ -438,7 +440,8 @@ internal sealed class MainForm : Form
             var multiplier = scaleBox.SelectedIndex == 0 ? 2 : 4;
             var anime = modelBox.SelectedIndex == 1;
             await new VideoProcessor(tools).RunAsync(
-                input, output, multiplier, anime, message => progress.Report(message), cancellation.Token);
+                input, output, multiplier, anime, message => progress.Report(message), cancellation.Token,
+                message => jobProgress.Report(message));
             AppendLog("Upscaling terminé.");
             update.Report("TERMINÉ");
             MessageBox.Show(this, $"La vidéo agrandie a été enregistrée ici :\n{output}",
@@ -512,6 +515,45 @@ internal sealed class MainForm : Form
             progress.Value = 0;
             dependencyStatus.Parent?.Invalidate();
         }
+    }
+
+    private void UpdateJobProgress(VideoProcessor.VideoProgress update)
+    {
+        var percent = update.Stage switch
+        {
+            "Upscaling des images" => (int)Math.Round(
+                (double)update.CompletedFrames / update.TotalFrames * 90),
+            "Assemblage de la vidéo et de l'audio" => 90 + (int)Math.Round(
+                (double)update.CompletedFrames / update.TotalFrames * 9),
+            "Terminé" => 100,
+            _ => 0
+        };
+
+        if (update.TotalFrames > 0 && update.Stage != "Extraction des images")
+        {
+            progress.Style = ProgressBarStyle.Blocks;
+            progress.Maximum = 100;
+            progress.Value = Math.Clamp(percent, 0, 100);
+        }
+        else
+        {
+            progress.Style = ProgressBarStyle.Marquee;
+            progress.MarqueeAnimationSpeed = 25;
+        }
+
+        var timing = update.Remaining is TimeSpan remaining
+            ? $"reste estimé {FormatDuration(remaining)}"
+            : update.Stage == "Terminé" ? "terminé" : "estimation en cours";
+        jobStatus.Text =
+            $"{update.Stage.ToUpperInvariant()} {percent}% — écoulé {FormatDuration(update.Elapsed)} — {timing}";
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        var hours = (int)duration.TotalHours;
+        return hours > 0
+            ? $"{hours:00}:{duration.Minutes:00}:{duration.Seconds:00}"
+            : $"{duration.Minutes:00}:{duration.Seconds:00}";
     }
 
     private void UpdateDependencyStatus()
