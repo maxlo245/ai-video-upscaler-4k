@@ -1,4 +1,6 @@
 using System.Globalization;
+using VideoUpscaler.Core;
+using VideoUpscaler.Core.Upscaling;
 
 namespace VideoUpscaler.App;
 
@@ -17,6 +19,9 @@ internal sealed class MainForm : Form
     private readonly TextBox outputBox = new();
     private readonly ComboBox scaleBox = new();
     private readonly ComboBox modelBox = new();
+    private readonly ComboBox cleanupBox = new();
+    private readonly ComboBox stabilityBox = new();
+    private readonly ComboBox fidelityBox = new();
     private readonly Button startButton = new();
     private readonly Button cancelButton = new();
     private readonly Button toolsButton = new();
@@ -29,8 +34,8 @@ internal sealed class MainForm : Form
     public MainForm()
     {
         Text = "Upscale Studio 4K";
-        MinimumSize = new Size(840, 720);
-        Size = new Size(1020, 850);
+        MinimumSize = new Size(840, 800);
+        Size = new Size(1020, 920);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Canvas;
         ForeColor = TextPrimary;
@@ -73,7 +78,7 @@ internal sealed class MainForm : Form
         };
         content.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
         content.RowStyles.Add(new RowStyle(SizeType.Absolute, 146));
-        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 156));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 232));
         content.RowStyles.Add(new RowStyle(SizeType.Absolute, 102));
         content.RowStyles.Add(new RowStyle(SizeType.Absolute, 210));
         scroll.Controls.Add(content);
@@ -157,15 +162,15 @@ internal sealed class MainForm : Form
     private Control BuildSettingsCard()
     {
         var card = MakeCard();
-        var layout = CardLayout(card, 3, 3);
+        var layout = CardLayout(card, 3, 4);
         layout.ColumnStyles[0].Width = 128;
         layout.ColumnStyles[1].SizeType = SizeType.Percent;
         layout.ColumnStyles[1].Width = 100;
         layout.ColumnStyles[2].Width = 215;
-        layout.ColumnStyles[2].Width = 215;
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 29));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
 
         layout.Controls.Add(MakeLabel("Agrandissement", 10, TextPrimary), 0, 0);
         ConfigureCombo(scaleBox, ["2×", "4× · jusqu'à 4K"]);
@@ -174,13 +179,56 @@ internal sealed class MainForm : Form
 
         layout.Controls.Add(MakeLabel("Style IA", 10, TextPrimary), 0, 1);
         ConfigureCombo(modelBox, ["Réaliste · Real-ESRGAN x4plus", "Animation · Real-ESRGAN x4plus Anime"]);
-        layout.Controls.Add(modelBox, 1, 1);
         modelBox.SelectedIndex = 0;
+        layout.Controls.Add(modelBox, 1, 1);
 
-        var note = MakeLabel("La sortie est limitée au 4K UHD (3840 × 2160).", 9, TextMuted);
-        layout.Controls.Add(note, 0, 2);
+        var quality = BuildQualityPanel();
+        layout.Controls.Add(quality, 1, 2);
+        layout.SetColumnSpan(quality, 2);
+
+        var note = MakeLabel("Préparation sans perte, tuiles sans couture, H.264 CRF 16.", 9, TextMuted);
+        layout.Controls.Add(note, 0, 3);
         layout.SetColumnSpan(note, 3);
         return card;
+    }
+
+    private Control BuildQualityPanel()
+    {
+        var panel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            RowCount = 2,
+            BackColor = Card,
+            Margin = new Padding(0, 2, 0, 0)
+        };
+        for (var index = 0; index < 3; index++)
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+
+        var labels = new[] { "Nettoyage source", "Stabilité temporelle", "Fidélité à la source" };
+        var combos = new[] { cleanupBox, stabilityBox, fidelityBox };
+        var items = new[]
+        {
+            new[] { "Aucun", "Léger", "Fort" },
+            new[] { "Désactivée", "Légère", "Forte" },
+            new[] { "Détail maximal · 100 %", "Équilibrée · 90 %", "Fidèle · 75 %" }
+        };
+        var defaults = new[] { 1, 1, 0 };
+
+        for (var index = 0; index < 3; index++)
+        {
+            var label = MakeLabel(labels[index], 8, TextMuted);
+            label.Margin = new Padding(0, 0, 8, 0);
+            panel.Controls.Add(label, index, 0);
+            ConfigureCombo(combos[index], items[index]);
+            combos[index].Margin = new Padding(0, 0, 8, 0);
+            combos[index].SelectedIndex = defaults[index];
+            panel.Controls.Add(combos[index], index, 1);
+        }
+
+        return panel;
     }
 
     private Control BuildActionArea()
@@ -439,8 +487,15 @@ internal sealed class MainForm : Form
             UpdateDependencyStatus();
             var multiplier = scaleBox.SelectedIndex == 0 ? 2 : 4;
             var anime = modelBox.SelectedIndex == 1;
+            var cleanup = (SourceCleanup)cleanupBox.SelectedIndex;
+            var options = new UpscaleOptions
+            {
+                Fidelity = fidelityBox.SelectedIndex switch { 0 => 1.0, 1 => 0.9, _ => 0.75 },
+                TemporalStability = stabilityBox.SelectedIndex switch { 0 => 0.0, 1 => 0.35, _ => 0.7 }
+            };
             await new VideoProcessor(tools).RunAsync(
-                input, output, multiplier, anime, message => progress.Report(message), cancellation.Token,
+                input, output, multiplier, anime, cleanup, options,
+                message => progress.Report(message), cancellation.Token,
                 message => jobProgress.Report(message));
             AppendLog("Upscaling terminé.");
             update.Report("TERMINÉ");
@@ -505,6 +560,9 @@ internal sealed class MainForm : Form
         cancelButton.Enabled = busy;
         scaleBox.Enabled = !busy;
         modelBox.Enabled = !busy;
+        cleanupBox.Enabled = !busy;
+        stabilityBox.Enabled = !busy;
+        fidelityBox.Enabled = !busy;
         sourceBox.Enabled = !busy;
         outputBox.Enabled = !busy;
         progress.Style = busy ? ProgressBarStyle.Marquee : ProgressBarStyle.Blocks;
@@ -521,15 +579,13 @@ internal sealed class MainForm : Form
     {
         var percent = update.Stage switch
         {
-            "Upscaling des images" => (int)Math.Round(
-                (double)update.CompletedFrames / update.TotalFrames * 90),
-            "Assemblage de la vidéo et de l'audio" => 90 + (int)Math.Round(
-                (double)update.CompletedFrames / update.TotalFrames * 9),
+            "Upscaling des images" when update.TotalFrames > 0 => Math.Clamp(
+                (int)Math.Round((double)update.CompletedFrames / update.TotalFrames * 99), 0, 99),
             "Terminé" => 100,
             _ => 0
         };
 
-        if (update.TotalFrames > 0 && update.Stage != "Extraction des images")
+        if (update.Stage == "Terminé" || update.TotalFrames > 0)
         {
             progress.Style = ProgressBarStyle.Blocks;
             progress.Maximum = 100;

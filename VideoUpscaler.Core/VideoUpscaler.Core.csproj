@@ -3,5 +3,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- API managée uniquement : les binaires natifs (DirectML ou CPU) sont fournis par l'application hôte. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.24.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="VideoUpscaler.Core.Tests" />
+  </ItemGroup>
 </Project>

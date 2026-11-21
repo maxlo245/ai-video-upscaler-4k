@@ -7,10 +7,11 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using VideoUpscaler.Core;
 
 namespace VideoUpscaler.App;
 
-internal sealed class ExternalTools
+internal sealed class ExternalTools : IToolPaths
 {
     private const string FfmpegApi = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest";
     private const string GeneralModelResource = "UpscaleStudio4K.Models.General.onnx";

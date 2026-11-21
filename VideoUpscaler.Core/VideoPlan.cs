@@ -1,3 +1,5 @@
+using System.IO;
+
 namespace VideoUpscaler.Core;
 
 public sealed record VideoPlan(
@@ -21,6 +23,8 @@ public sealed record VideoPlan(
         var maxWidth = portrait ? 2160 : 3840;
         var maxHeight = portrait ? 3840 : 2160;
         var factor = Math.Min(scale, Math.Min((double)maxWidth / width, (double)maxHeight / height));
+        if (factor < 1)
+            throw new InvalidDataException("La vidéo source dépasse déjà la résolution 4K.");
         var outputWidth = EvenDimension(width * factor);
         var outputHeight = EvenDimension(height * factor);
 
@@ -46,5 +50,5 @@ public sealed record VideoPlan(
                double.IsFinite(plain) && plain > 0 && plain <= 240 ? plain : 30;
     }
 
-    private static int EvenDimension(double value) => Math.Max(2, (int)Math.Round(value / 2) * 2);
+    private static int EvenDimension(double value) => Math.Max(2, (int)Math.Round(value / 2, MidpointRounding.AwayFromZero) * 2);
 }
