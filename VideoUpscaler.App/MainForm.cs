@@ -178,7 +178,12 @@ internal sealed class MainForm : Form
         layout.Controls.Add(scaleBox, 1, 0);
 
         layout.Controls.Add(MakeLabel("Style IA", 10, TextPrimary), 0, 1);
-        ConfigureCombo(modelBox, ["Réaliste · Real-ESRGAN x4plus", "Animation · Real-ESRGAN x4plus Anime"]);
+        ConfigureCombo(modelBox,
+        [
+            "Vidéo · x4v3 (recommandé)",
+            "Détail max · x4plus (lent)",
+            "Animation · x4plus Anime 6B"
+        ]);
         modelBox.SelectedIndex = 0;
         layout.Controls.Add(modelBox, 1, 1);
 
@@ -486,7 +491,12 @@ internal sealed class MainForm : Form
             await tools.EnsureInstalledAsync(message => progress.Report(message), cancellation.Token);
             UpdateDependencyStatus();
             var multiplier = scaleBox.SelectedIndex == 0 ? 2 : 4;
-            var anime = modelBox.SelectedIndex == 1;
+            var model = modelBox.SelectedIndex switch
+            {
+                0 => new UpscaleModel(tools.VideoModelPath, "Real-ESRGAN General x4v3", false),
+                1 => new UpscaleModel(tools.GeneralModelPath, "Real-ESRGAN x4plus", false),
+                _ => new UpscaleModel(tools.AnimeModelPath, "Real-ESRGAN x4plus Anime 6B", true)
+            };
             var cleanup = (SourceCleanup)cleanupBox.SelectedIndex;
             var options = new UpscaleOptions
             {
@@ -494,7 +504,7 @@ internal sealed class MainForm : Form
                 TemporalStability = stabilityBox.SelectedIndex switch { 0 => 0.0, 1 => 0.35, _ => 0.7 }
             };
             await new VideoProcessor(tools).RunAsync(
-                input, output, multiplier, anime, cleanup, options,
+                input, output, multiplier, model, cleanup, options,
                 message => progress.Report(message), cancellation.Token,
                 message => jobProgress.Report(message));
             AppendLog("Upscaling terminé.");

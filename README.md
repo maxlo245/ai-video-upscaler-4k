@@ -18,8 +18,9 @@ L'exécutable Windows autonome inclut les modèles IA et ne nécessite pas l'ins
 - Interface Windows en français, sélection de fichiers, glisser-déposer et annulation.
 - Agrandissement IA **2×** ou **4×**, avec une sortie plafonnée à **3840 × 2160** en paysage et
   **2160 × 3840** en portrait.
-- Profil **Réaliste** avec Real-ESRGAN x4plus et profil **Animation** avec Real-ESRGAN x4plus
-  Anime 6B.
+- Trois profils : **Vidéo** avec Real-ESRGAN General x4v3 (par défaut, ~16× plus rapide que
+  x4plus pour une fidélité équivalente), **Détail max** avec Real-ESRGAN x4plus, et **Animation**
+  avec Real-ESRGAN x4plus Anime 6B.
 - Inférence locale via ONNX Runtime : DirectML accélère le traitement sur les GPU compatibles
   NVIDIA, AMD et Intel ; le processeur sert de solution de repli.
 - Barre de progression, temps écoulé et estimation actualisée du temps restant pour l'upscaling
@@ -30,7 +31,17 @@ L'exécutable Windows autonome inclut les modèles IA et ne nécessite pas l'ins
 - Qualité de sortie : **H.264 CRF 16, préréglage `slow`, `aq-mode=3`**, conversion RVB → YUV en
   Lanczos.
 
-## Ce qui a changé dans le moteur (v0.5)
+## Ce qui a changé dans le moteur (v0.6)
+
+- **Nouveau modèle par défaut : Real-ESRGAN General x4v3 (SRVGGNetCompact)**. Sur une image réelle
+  640 × 360 agrandie en 1280 × 720, il atteint un SSIM de 0,958 contre 0,960 pour x4plus, avec une
+  netteté supérieure, pour **19 s au lieu de 352 s** (processeur du téléphone). Sur la vidéo de
+  démonstration, il est 16× plus rapide avec un SSIM légèrement meilleur.
+- Les modèles **SwinIR-M x4 GAN** et **Real-ESRGAN x2plus** ont été mesurés : SwinIR est plus mou
+  (SSIM 0,938) et 18× plus lent que x4v3 ; x2plus est plus lent et moins net. Ils ne sont pas
+  embarqués. `4x-UltraSharp` a été écarté pour sa licence non commerciale.
+
+### Moteur (v0.5)
 
 La version précédente fusionnait les tuiles sur 144 pixels, redimensionnait chaque tuile avec GDI+
 puis arrondissait en 8 bits à chaque étape. Cela produisait des bandes légèrement floues, des
@@ -58,8 +69,8 @@ raccords décalés et une perte de micro-contraste. Le moteur a été réécrit 
 
 1. Téléchargez et ouvrez `UpscaleStudio4K.exe`.
 2. Sélectionnez une vidéo et l'emplacement de sortie.
-3. Choisissez le facteur **2×** ou **4×**, le profil **Réaliste** ou **Animation**, puis les
-   réglages de qualité.
+3. Choisissez le facteur **2×** ou **4×**, le profil **Vidéo**, **Détail max** ou **Animation**,
+   puis les réglages de qualité.
 4. Cliquez sur **LANCER L'UPSCALE**. Suivez l'avancement, le temps écoulé et le temps restant
    estimé dans l'application ; vous pouvez annuler le traitement.
 
@@ -71,6 +82,7 @@ dans son dossier local d'outils.
 
 | Réglage | Valeurs | Effet |
 |---|---|---|
+| Style IA | Vidéo / Détail max / Animation | x4v3 pour un rendu propre et rapide ; x4plus pour forcer le détail ; Anime 6B pour l'animation. |
 | Nettoyage source | Aucun / Léger / Fort | Réduit les artefacts de compression avant l'IA. « Léger » est un bon compromis. |
 | Stabilité temporelle | Désactivée / Légère / Forte | Lisse le scintillement des zones quasi immobiles. Trop forte, elle peut créer un léger traînée sur les mouvements lents. |
 | Fidélité à la source | 100 % / 90 % / 75 % | À 100 %, l'IA décide de tout. En dessous, la sortie est mélangée à la source : moins de détails inventés, rendu plus « naturel ». |
@@ -83,6 +95,23 @@ dans son dossier local d'outils.
 - Une connexion Internet est nécessaire au premier démarrage uniquement si FFmpeg doit être
   téléchargé.
 - De l'espace disque pour le fichier de sortie uniquement : les images transitent en mémoire.
+
+## Modèles et performances
+
+Mesures sur une image réelle 640 × 360 (source 1080p) agrandie en 1280 × 720, comparée à la
+référence 4K correspondante, sur le processeur d'un téléphone (aucun GPU) :
+
+| Modèle | Temps | SSIM | PSNR | Netteté (énergie de bord) |
+|---|---|---|---|---|
+| Real-ESRGAN x4v3 | **19 s** | 0,958 | 32,5 dB | 2,84 |
+| Real-ESRGAN x2plus | 71 s | 0,944 | 33,4 dB | 2,41 |
+| Real-ESRGAN x4plus | 352 s | 0,960 | 33,7 dB | 2,12 |
+| SwinIR-M x4 GAN | 359 s | 0,938 | 32,0 dB | 2,42 |
+| Lanczos (référence de flou) | 0 s | 0,993 | 44,4 dB | 1,17 |
+
+Le SSIM/PSNR favorise le flou ; la colonne « netteté » mesure l'énergie des contours.
+x4v3 offre le meilleur compromis qualité/temps, x4plus reste disponible pour forcer un rendu plus
+incisif (au prix d'artefacts), et SwinIR n'apporte pas de gain sur ce contenu réel.
 
 ## Qualité et performances
 

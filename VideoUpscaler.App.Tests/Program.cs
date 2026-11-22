@@ -14,7 +14,7 @@ Directory.CreateDirectory(workDirectory);
 
 try
 {
-    var modelPath = Path.Combine(repository, "Models", "RealESRGAN", "General", "model.onnx");
+    var modelPath = Path.Combine(repository, "Models", "RealESRGAN", "Video", "model.onnx");
     var input = new RgbImage(64, 48, new byte[64 * 48 * 3]);
     for (var y = 0; y < input.Height; y++)
     for (var x = 0; x < input.Width; x++)
@@ -58,7 +58,7 @@ static string? FindRepositoryRoot()
     var directory = new DirectoryInfo(AppContext.BaseDirectory);
     while (directory is not null)
     {
-        if (File.Exists(Path.Combine(directory.FullName, "Models", "RealESRGAN", "General", "model.onnx")))
+        if (File.Exists(Path.Combine(directory.FullName, "Models", "RealESRGAN", "Video", "model.onnx")))
             return directory.FullName;
         directory = directory.Parent;
     }

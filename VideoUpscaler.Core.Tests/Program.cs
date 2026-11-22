@@ -164,7 +164,7 @@ try
     }
     else
     {
-        var modelPath = Path.Combine(repository, "Models", "RealESRGAN", "General", "model.onnx");
+        var modelPath = Path.Combine(repository, "Models", "RealESRGAN", "Video", "model.onnx");
         var pattern = new RgbImage(96, 72, new byte[96 * 72 * 3]);
         for (var y = 0; y < pattern.Height; y++)
         for (var x = 0; x < pattern.Width; x++)
@@ -242,6 +242,21 @@ try
         for (var i = 0; i < downscaled.Pixels.Length; i += 97)
             distinct.Add(downscaled.Pixels[i]);
         Check("Downscaled output is not a flat image", distinct.Count > 16);
+
+        // Le modèle Real-ESRGAN x4plus historique reste utilisable.
+        var generalPath = Path.Combine(repository, "Models", "RealESRGAN", "General", "model.onnx");
+        var tiny = new RgbImage(32, 32, new byte[32 * 32 * 3]);
+        for (var index = 0; index < tiny.Pixels.Length; index++)
+            tiny.Pixels[index] = (byte)((index * 31) % 256);
+        var tinyPath = Path.Combine(workDirectory, "tiny-model.png");
+        PngCodec.Encode(tinyPath, tiny);
+        using (var general = new OnnxFrameUpscaler(generalPath, preferGpu: false))
+        using (var generalEngine = new UpscaleEngine(general, new UpscaleOptions { TileSize = 32, TilePadding = 8 }))
+        {
+            var generalOutput = Path.Combine(workDirectory, "tiny-general.png");
+            generalEngine.ProcessFrame(tinyPath, generalOutput, 128, 128, CancellationToken.None);
+            Check("Real-ESRGAN x4plus still loads and runs", PngCodec.Decode(generalOutput).Width == 128);
+        }
     }
 
     // --- Pipeline vidéo complet ---------------------------------------------
@@ -253,7 +268,8 @@ try
     }
     else
     {
-        var tools = new StaticToolPaths(ffmpeg, ffprobe, Path.Combine(repository, "Models", "RealESRGAN", "General", "model.onnx"));
+        var tools = new StaticToolPaths(ffmpeg, ffprobe);
+        var videoModelPath = Path.Combine(repository, "Models", "RealESRGAN", "Video", "model.onnx");
         var videoPath = Path.Combine(workDirectory, "input.mp4");
         await ProcessRunner.RunAsync(ffmpeg,
             [
@@ -268,7 +284,9 @@ try
         var updates = new List<VideoProcessor.VideoProgress>();
         var processor = new VideoProcessor(tools);
         await processor.RunAsync(
-            videoPath, outputPath, 2, false, SourceCleanup.None,
+            videoPath, outputPath, 2,
+            new UpscaleModel(videoModelPath, "Real-ESRGAN General x4v3", false),
+            SourceCleanup.None,
             new UpscaleOptions { TileSize = 64, TilePadding = 16 },
             Console.WriteLine, CancellationToken.None, updates.Add);
 
@@ -339,10 +357,8 @@ internal sealed class NearestUpscaler : IFrameUpscaler
     }
 }
 
-internal sealed class StaticToolPaths(string ffmpeg, string ffprobe, string model) : IToolPaths
+internal sealed class StaticToolPaths(string ffmpeg, string ffprobe) : IToolPaths
 {
     public string? CurrentFfmpegPath => ffmpeg;
     public string? CurrentFfprobePath => ffprobe;
-    public string GeneralModelPath => model;
-    public string AnimeModelPath => model;
 }

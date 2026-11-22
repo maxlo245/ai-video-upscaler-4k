@@ -16,8 +16,10 @@ internal sealed class ExternalTools : IToolPaths
     private const string FfmpegApi = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest";
     private const string GeneralModelResource = "UpscaleStudio4K.Models.General.onnx";
     private const string AnimeModelResource = "UpscaleStudio4K.Models.Anime.onnx";
+    private const string VideoModelResource = "UpscaleStudio4K.Models.Video.onnx";
     private const string GeneralModelHash = "4851ec156207d271f5328605d0582eeb851e656227da8aca093ced9e60789291";
     private const string AnimeModelHash = "9a029dae374b2cd4c3eb2dbbed857e22e6d785687c767aa12828e7356b9fb378";
+    private const string VideoModelHash = "152a44621a7906878d0a580c0347e8bcce78bafeb949af99383fba13e81f253a";
     private readonly string toolsDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "UpscaleStudio4K", "tools");
@@ -27,11 +29,13 @@ internal sealed class ExternalTools : IToolPaths
     public string ModelDirectory => Path.Combine(toolsDirectory, "models");
     public string GeneralModelPath => Path.Combine(ModelDirectory, "realesrgan-x4plus.onnx");
     public string AnimeModelPath => Path.Combine(ModelDirectory, "realesrgan-x4plus-anime-6b.onnx");
+    public string VideoModelPath => Path.Combine(ModelDirectory, "realesr-general-x4v3.onnx");
     public string FfmpegPath => Path.Combine(toolsDirectory, "ffmpeg", "bin", "ffmpeg.exe");
     public string FfprobePath => Path.Combine(toolsDirectory, "ffmpeg", "bin", "ffprobe.exe");
 
     public bool IsReady => File.Exists(GeneralModelPath) &&
                            File.Exists(AnimeModelPath) &&
+                           File.Exists(VideoModelPath) &&
                            (File.Exists(FfmpegPath) || FindOnPath("ffmpeg.exe") is not null);
 
     public string? CurrentFfmpegPath => File.Exists(FfmpegPath) ? FfmpegPath : FindOnPath("ffmpeg.exe");
@@ -57,6 +61,8 @@ internal sealed class ExternalTools : IToolPaths
             GeneralModelResource, GeneralModelPath, GeneralModelHash, "Real-ESRGAN x4plus", report, cancellationToken);
         await InstallBundledModelAsync(
             AnimeModelResource, AnimeModelPath, AnimeModelHash, "Real-ESRGAN x4plus Anime", report, cancellationToken);
+        await InstallBundledModelAsync(
+            VideoModelResource, VideoModelPath, VideoModelHash, "Real-ESRGAN General x4v3", report, cancellationToken);
 
         if (CurrentFfmpegPath is null || CurrentFfprobePath is null)
         {

@@ -5,6 +5,9 @@ using VideoUpscaler.Core.Upscaling;
 
 namespace VideoUpscaler.Core;
 
+/// <summary>Modèle choisi pour un traitement, avec son libellé et son type de contenu.</summary>
+public sealed record UpscaleModel(string Path, string Label, bool Anime);
+
 /// <summary>
 /// Pipeline vidéo en flux continu : FFmpeg décode les images brutes, le moteur les agrandit,
 /// puis un second FFmpeg encode le MP4 pendant le traitement. Aucun fichier temporaire,
@@ -19,7 +22,7 @@ public sealed class VideoProcessor(IToolPaths tools)
         string inputPath,
         string outputPath,
         int scale,
-        bool anime,
+        UpscaleModel model,
         SourceCleanup cleanup,
         UpscaleOptions options,
         Action<string> report,
@@ -65,10 +68,7 @@ public sealed class VideoProcessor(IToolPaths tools)
             }
         };
 
-        var modelPath = anime ? tools.AnimeModelPath : tools.GeneralModelPath;
-        report(anime
-            ? "Agrandissement par Real-ESRGAN x4plus Anime 6B…"
-            : "Agrandissement par Real-ESRGAN x4plus…");
+        report($"Agrandissement par {model.Label}…");
         progressChanged?.Invoke(new VideoProgress("Upscaling des images", 0, totalFrames, jobStopwatch.Elapsed, null));
 
         var outputDirectory = Path.GetDirectoryName(Path.GetFullPath(outputPath))!;
@@ -78,12 +78,12 @@ public sealed class VideoProcessor(IToolPaths tools)
         {
             await Task.Run(async () =>
             {
-                using var model = new OnnxFrameUpscaler(modelPath, preferGpu: true, report);
-                using var engine = new UpscaleEngine(model, options, report);
+                using var upscaler = new OnnxFrameUpscaler(model.Path, preferGpu: true, report);
+                using var engine = new UpscaleEngine(upscaler, options, report);
                 using var decoder = FfmpegProcess.StartDecoder(
                     ffmpeg, BuildDecoderArguments(inputPath, cleanup), null, reportToolOutput);
                 using var encoder = FfmpegProcess.StartEncoder(
-                    ffmpeg, BuildEncoderArguments(inputPath, outputPath, plan, source, anime), null, reportToolOutput);
+                    ffmpeg, BuildEncoderArguments(inputPath, outputPath, plan, source, model.Anime), null, reportToolOutput);
                 using var registration = cancellationToken.Register(() =>
                 {
                     decoder.Kill();

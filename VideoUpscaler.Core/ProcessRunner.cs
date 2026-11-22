@@ -5,8 +5,6 @@ public interface IToolPaths
 {
     string? CurrentFfmpegPath { get; }
     string? CurrentFfprobePath { get; }
-    string GeneralModelPath { get; }
-    string AnimeModelPath { get; }
 }
 
 /// <summary>Exécution d'un processus externe avec collecte de la sortie et annulation.</summary>

@@ -1,7 +1,8 @@
 # Third-party components
 
-- The [Real-ESRGAN x4plus model](https://huggingface.co/skillsafe-ai/realesrgan-x4plus)
-  and [x4plus Anime 6B model](https://huggingface.co/skillsafe-ai/realesrgan-x4plus-anime-6b)
+- The [Real-ESRGAN x4plus model](https://huggingface.co/skillsafe-ai/realesrgan-x4plus),
+  the [x4plus Anime 6B model](https://huggingface.co/skillsafe-ai/realesrgan-x4plus-anime-6b)
+  and the [Real-ESRGAN General x4v3 model](https://huggingface.co/techycoder/realesrgan-general-x4v3)
   are bundled in the application and repository. Their weights and architecture are from
   [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN), under BSD-3-Clause, copyright
   Xintao Wang (2021). The complete model license is in
